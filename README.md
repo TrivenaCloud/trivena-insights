@@ -1,5 +1,9 @@
 # Trivena Insights
 
+
+> **Developers:** use the shared Trivena toolchain — see [CONTRIBUTING.md](./CONTRIBUTING.md) and [trivena-development docs](https://github.com/TrivenaCloud/trivena-development/tree/main/docs).
+
+
 Analytics and reporting for Trivena Cloud.
 
 ## Hosted

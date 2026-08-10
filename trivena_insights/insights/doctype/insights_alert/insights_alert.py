@@ -1,0 +1,222 @@
+# Copyright (c) 2023, Frappe Technologies Pvt. Ltd. and contributors
+# For license information, please see license.txt
+import re
+from datetime import datetime
+
+import trivena_framework as trivena
+import pandas as pd
+import telegram
+from croniter import croniter
+from trivena_framework.model.document import Document
+from trivena_framework.utils import validate_email_address
+from trivena_framework.utils.data import get_datetime, get_datetime_str, now_datetime
+
+from trivena_insights.insights.doctype.insights_data_source_v3.insights_data_source_v3 import (
+    db_connections,
+)
+from trivena_insights.utils import deep_convert_dict_to_dict
+
+
+class InsightsAlert(Document):
+    # begin: auto-generated types
+    # This code is auto-generated. Do not modify anything in this block.
+
+    from typing import TYPE_CHECKING
+
+    if TYPE_CHECKING:
+        from trivena_framework.types import DF
+
+        channel: DF.Literal["Email", "Telegram"]
+        condition: DF.Code
+        cron_format: DF.Data | None
+        custom_condition: DF.Check
+        disabled: DF.Check
+        frequency: DF.Literal["Hourly", "Daily", "Weekly", "Monthly", "Cron"]
+        last_execution: DF.Datetime | None
+        message: DF.MarkdownEditor | None
+        next_execution: DF.Datetime | None
+        query: DF.Link
+        recipients: DF.SmallText | None
+        telegram_chat_id: DF.Data | None
+        title: DF.Data
+    # end: auto-generated types
+
+    def validate(self):
+        if self.disabled:
+            return
+
+        if self.query:
+            self.has_query_permission()
+
+        try:
+            self.evaluate_condition()
+        except Exception as e:
+            trivena.throw(f"Invalid condition: {e}")
+
+    def has_query_permission(self):
+        if not trivena.has_permission("Insights Query v3", "read", self.query):
+            trivena.throw("You do not have permission to access this query")
+
+    @trivena.whitelist()
+    def send_alert(self, force: bool = False):
+        results = self.evaluate_condition()
+        if not results and not force:
+            return
+
+        message = self.evaluate_message()
+
+        if self.channel == "Email":
+            self.send_email_alert(message)
+        if self.channel == "Telegram":
+            self.send_telegram_alert(message)
+
+        self.db_set("last_execution", now_datetime(), update_modified=False)
+
+    def send_telegram_alert(self, message):
+        tg = TelegramAlert(self.telegram_chat_id)
+        tg.send(message)
+
+    def send_email_alert(self, message):
+        subject = f"Insights Alert: {self.title}"
+        recievers = self.get_recipients()
+        trivena.sendmail(
+            recipients=recievers,
+            subject=subject,
+            message=message,
+            now=True,
+        )
+
+    def evaluate_condition(self):
+        doc = trivena.get_doc("Insights Query v3", self.query)
+        with db_connections():
+            return doc.evaluate_alert_expression(self.condition)
+
+    def evaluate_message(self):
+        rows_pattern = r"{{\s*rows\s*}}"
+        message_md = re.sub(rows_pattern, "{{ datatable }}", self.message)
+
+        context = self.get_message_context()
+        message_md = render_template_restricted(message_md, context)
+        if self.channel == "Telegram":
+            return message_md
+
+        message_html = trivena.utils.md_to_html(message_md)
+        return trivena.render_template(
+            "insights/templates/alert.html", context=trivena._dict(message=message_html)
+        )
+
+    def get_message_context(self):
+        doc = trivena.get_doc("Insights Query v3", self.query)
+        with db_connections():
+            data = doc.execute()
+
+        rows = data["rows"]
+        datatable = pd.DataFrame(rows).to_html(index=False)
+        datatable = f"<div class='datatable-container'>{datatable}</div>"
+        return deep_convert_dict_to_dict(
+            {
+                "rows": rows,
+                "count": len(rows),
+                "query": {
+                    "title": doc.title,
+                },
+                "alert": {
+                    "title": self.title,
+                },
+                "datatable": datatable,
+            }
+        )
+
+    def get_recipients(self):
+        recipients = self.recipients.split(",")
+        for recipient in recipients:
+            if not validate_email_address(recipient):
+                trivena.throw(f"{recipient} is not a valid email address")
+        return recipients
+
+    @property
+    def next_execution(self):
+        return get_datetime_str(self.get_next_execution())
+
+    def get_next_execution(self):
+        CRON_MAP = {
+            "Monthly": "0 0 1 * *",
+            "Weekly": "0 0 * * 0",
+            "Daily": "0 0 * * *",
+            "Hourly": "0 * * * *",
+        }
+        if not self.cron_format:
+            self.cron_format = CRON_MAP[self.frequency]
+
+        start_time = get_datetime(self.last_execution or datetime(2000, 1, 1))
+        return croniter(self.cron_format, start_time).get_next(datetime)
+
+    def is_event_due(self):
+        if not self.last_execution:
+            return True
+
+        next_execution = self.get_next_execution()
+        return next_execution <= now_datetime()
+
+    @trivena.whitelist()
+    def test_alert(self):
+        self.send_alert(force=True)
+
+
+def send_alerts():
+    alerts = trivena.get_all("Insights Alert", filters={"disabled": 0})
+    for alert in alerts:
+        try:
+            alert_doc = trivena.get_cached_doc("Insights Alert", alert.name)
+            if alert_doc.is_event_due():
+                alert_doc.send_alert()
+            trivena.db.commit()
+        except Exception:
+            trivena.db.rollback()
+            trivena.log_error(title=f"Failed to send alert: {alert.name}")
+
+
+class TelegramAlert:
+    def __init__(self, chat_id):
+        self.token = trivena.get_single("Insights Settings").get_password("telegram_api_token")
+        if not self.token:
+            trivena.throw("Telegram Bot Token not set in Insights Settings")
+
+        self.chat_id = chat_id
+
+    def send(self, message):
+        try:
+            return self.bot.send_message(chat_id=self.chat_id, text=message[:4096])
+        except Exception:
+            trivena.log_error("Telegram Bot Error")
+            raise
+
+    @property
+    def bot(self):
+        return telegram.Bot(token=self.token)
+
+
+def render_template_restricted(template: str, context: dict) -> str:
+    """Render a Jinja template with a restricted sandbox environment.
+
+    Only allows access to explicitly passed context variables and basic filters.
+    Does not expose frappe utilities or other globals.
+
+    Uses the same sandboxed environment as trivena.render_template but without
+    the get_safe_globals() that would expose frappe internals.
+    """
+    try:
+        from trivena_framework.utils.jinja import _get_jenv
+
+        base_jenv = _get_jenv()
+        jenv = base_jenv.overlay()
+        jenv.filters = base_jenv.filters.copy()
+
+    except ImportError:
+        # fallback for v15
+        from trivena_framework.utils.jinja import get_jenv
+
+        jenv = get_jenv()
+
+    compiled_template = jenv.from_string(template)
+    return compiled_template.render(context)

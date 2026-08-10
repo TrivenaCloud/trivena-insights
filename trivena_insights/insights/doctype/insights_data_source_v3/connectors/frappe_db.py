@@ -1,0 +1,159 @@
+# Copyright (c) 2022, Frappe Technologies Pvt. Ltd. and contributors
+# For license information, please see license.txt
+
+
+import trivena_framework as trivena
+from trivena_framework import _dict
+from ibis import _
+
+from .mariadb import get_mariadb_connection
+from .postgresql import get_postgres_connection
+
+
+def get_frappedb_connection(data_source):
+    if data_source.database_type == "PostgreSQL":
+        return get_postgres_connection(data_source)
+    else:
+        return get_mariadb_connection(data_source)
+
+
+def get_primary_data_source():
+    site_db = trivena.get_doc("Insights Data Source v3", "Site DB")
+
+    # Set database type if not already set
+    if not site_db.database_type:
+        site_db.database_type = "PostgreSQL" if trivena.conf.db_type == "postgres" else "MariaDB"
+
+    # Use Site DB config if available, otherwise fall back to Frappe config
+    if not site_db.host or not site_db.port:
+        site_db.host = trivena.conf.db_host
+        site_db.port = trivena.conf.db_port
+
+    if not site_db.host:
+        site_db.host = "localhost"
+
+    if not site_db.port:
+        site_db.port = 5432 if site_db.database_type == "PostgreSQL" else 3306
+
+    if not site_db.database_name:
+        site_db.database_name = trivena.conf.db_name
+
+    if not site_db.username:
+        site_db.username = trivena.conf.db_name
+
+    if not site_db.password:
+        site_db.password = trivena.conf.db_password
+
+    if site_db.use_ssl is None:
+        site_db.use_ssl = False
+
+    return site_db
+
+
+def get_replica_data_source():
+    data_source = get_primary_data_source()
+
+    if trivena.conf.replica_host:
+        data_source.host = trivena.conf.replica_host
+    if trivena.conf.replica_db_port:
+        data_source.port = trivena.conf.replica_db_port
+    if trivena.conf.replica_db_name:
+        data_source.database_name = trivena.conf.replica_db_name
+
+    if trivena.conf.different_credentials_for_replica:
+        data_source.username = (
+            trivena.conf.replica_db_user or trivena.conf.replica_db_name or trivena.conf.db_name
+        )
+        data_source.password = trivena.conf.replica_db_password or trivena.conf.db_password
+
+    return data_source
+
+
+def get_sitedb_connection():
+    # If replica is configured, try replica connection first
+    if trivena.conf.read_from_replica:
+        try:
+            replica = get_replica_data_source()
+            return get_frappedb_connection(replica)
+        except Exception:
+            # If replica fails, fall back to primary
+            pass
+
+    primary = get_primary_data_source()
+    return get_frappedb_connection(primary)
+
+
+def is_frappe_db(data_source):
+    try:
+        db = get_frappedb_connection(data_source)
+        db.raw_sql("SET SESSION time_zone='+00:00'")
+        db.raw_sql("SET collation_connection = 'utf8mb4_unicode_ci'")
+        res = db.raw_sql("SELECT name FROM tabDocType LIMIT 1").fetchall()
+        db.con.close()
+        return len(res) > 0
+    except Exception:
+        return False
+
+
+def get_frappedb_table_links(data_source):
+    db = data_source._get_ibis_backend()
+
+    docfield = db.table("tabDocField")
+    custom_field = db.table("tabCustom Field")
+
+    standard_links = (
+        docfield.select(
+            _.fieldname,
+            _.fieldtype,
+            _.options,
+            _.parent,
+        )
+        .filter((_.fieldtype == "Link") | (_.fieldtype == "Table"))
+        .execute()
+    )
+
+    custom_links = (
+        custom_field.select(
+            _.fieldname,
+            _.fieldtype,
+            _.options,
+            _.dt.name("parent"),
+        )
+        .filter((_.fieldtype == "Link") | (_.fieldtype == "Table"))
+        .execute()
+    )
+
+    standard_links = standard_links.to_dict(orient="records")
+    custom_links = custom_links.to_dict(orient="records")
+
+    # links must name tables exactly as `Insights Table v3` stores them, or they never match
+    def table_name(doctype):
+        return data_source.format_table_name(f"tab{doctype}")
+
+    all_links = []
+    for link_row in standard_links + custom_links:
+        link = _dict(link_row)
+        if link.fieldtype == "Link":
+            all_links.append(
+                _dict(
+                    {
+                        "left_table": table_name(link.options),
+                        "left_column": "name",
+                        "right_table": table_name(link.parent),
+                        "right_column": link.fieldname,
+                    }
+                )
+            )
+        if link.fieldtype == "Table":
+            all_links.append(
+                _dict(
+                    {
+                        "left_table": table_name(link.parent),
+                        "left_column": "name",
+                        "right_table": table_name(link.options),
+                        "right_column": "parent",
+                    }
+                )
+            )
+
+    return all_links

@@ -1,0 +1,24 @@
+# Copyright (c) 2023, Frappe Technologies Pvt. Ltd. and contributors
+# For license information, please see license.txt
+
+# import frappe
+from trivena_framework.model.document import Document
+
+
+class InsightsQueryExecutionLog(Document):
+    # begin: auto-generated types
+    # This code is auto-generated. Do not modify anything in this block.
+
+    from typing import TYPE_CHECKING
+
+    if TYPE_CHECKING:
+        from trivena_framework.types import DF
+
+        data_source: DF.Data | None
+        query: DF.Data | None
+        use_data_store: DF.Check
+        sql: DF.Code | None
+        time_taken: DF.Float
+    # end: auto-generated types
+
+    pass

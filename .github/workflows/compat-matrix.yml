@@ -46,7 +46,7 @@ jobs:
           ref: ${{ matrix.insights_branch }}
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.frappe_branch == 'version-16' && '3.14' || '3.10' }}
 

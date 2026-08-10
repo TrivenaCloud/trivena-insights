@@ -1,0 +1,17 @@
+{
+  "name": "@trivenacloud/trivena-insights",
+  "version": "1.0.1",
+  "description": "Trivena Cloud — trivena-insights",
+  "author": "khadeem100",
+  "license": "MIT",
+  "main": "index.js",
+  "files": ["index.js", "README.md"],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TrivenaCloud/trivena-insights.git"
+  }
+}

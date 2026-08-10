@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master, develop, version-16]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint
+    uses: TrivenaCloud/trivena-development/.github/workflows/reusable-ci.yml@main
+    with:
+      run-frontend: true
+      python-version: "3.14"
+      node-version: "24"
+    secrets: inherit

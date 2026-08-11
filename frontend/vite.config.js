@@ -72,7 +72,7 @@ export default defineConfig({
 		},
 	},
 	build: {
-		outDir: `../insights/public/frontend`,
+		outDir: `../trivena_insights/public/frontend`,
 		emptyOutDir: true,
 		sourcemap: true,
 		rollupOptions: {

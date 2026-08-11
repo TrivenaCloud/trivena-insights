@@ -33,7 +33,7 @@
 		"lucide-vue-next": "^0.484.0",
 		"pinia": "^2.0.30",
 		"thememirror": "^2.0.1",
-		"vue": "^3.5.13",
+		"vue": "^3.5.41",
 		"vue-codemirror": "^6.0.1",
 		"vue-router": "^4.2.2",
 		"vue-sonner": "^1.0.3",

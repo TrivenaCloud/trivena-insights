@@ -20,7 +20,7 @@
 		"@headlessui/vue": "^1.7.17",
 		"@tanstack/vue-table": "^8.10.7",
 		"@types/vue-router": "^2.0.0",
-		"@vue-flow/core": "^1.23.0",
+		"@vue-flow/core": "^1.48.2",
 		"@vueuse/core": "^10.7.2",
 		"codemirror": "^6.0.1",
 		"dayjs": "^1.11.6",

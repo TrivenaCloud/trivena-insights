@@ -10,7 +10,7 @@ dynamic = ["version"]
 dependencies = [
     "pandas~=2.3.3",
     "SQLAlchemy==2.0.41",
-    "python-telegram-bot==21.4",
+    "python-telegram-bot==22.8",
     "duckdb~=1.4.3",
     "sqlglot<28.0.0",
     "ibis-framework~=11.0.0",

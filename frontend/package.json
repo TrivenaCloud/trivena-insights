@@ -21,7 +21,7 @@
 		"@tanstack/vue-table": "^8.10.7",
 		"@types/vue-router": "^2.0.0",
 		"@vue-flow/core": "^1.23.0",
-		"@vueuse/core": "^10.7.2",
+		"@vueuse/core": "^14.4.0",
 		"codemirror": "^6.0.1",
 		"dayjs": "^1.11.6",
 		"echarts": "^5.5.0",
